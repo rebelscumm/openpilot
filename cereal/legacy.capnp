@@ -1,10 +1,6 @@
 using Cxx = import "./include/c++.capnp";
 $Cxx.namespace("cereal");
 
-using Java = import "./include/java.capnp";
-$Java.package("ai.comma.openpilot.cereal");
-$Java.outerClassname("Legacy");
-
 @0x80ef1ec4889c2a63;
 
 # legacy.capnp: a home for deprecated structs
@@ -19,6 +15,21 @@ struct LiveUI @0xc08240f996aefced {
   alertText1 @1 :Text;
   alertText2 @2 :Text;
   awarenessStatus @3 :Float32;
+}
+
+struct UiLayoutState @0x88dcce08ad29dda0 {
+  activeApp @0 :App;
+  sidebarCollapsed @1 :Bool;
+  mapEnabled @2 :Bool;
+  mockEngaged @3 :Bool;
+
+  enum App @0x9917470acf94d285 {
+    home @0;
+    music @1;
+    nav @2;
+    settings @3;
+    none @4;
+  }
 }
 
 struct OrbslamCorrection @0x8afd33dc9b35e1aa {

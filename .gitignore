@@ -1,4 +1,5 @@
 venv/
+.env
 .clang-format
 .DS_Store
 .tags
@@ -10,6 +11,7 @@ venv/
 .vscode*
 model2.png
 a.out
+.hypothesis
 
 *.dylib
 *.DSYM
@@ -48,6 +50,7 @@ selfdrive/loggerd/bootlog
 selfdrive/sensord/_gpsd
 selfdrive/sensord/_sensord
 selfdrive/camerad/camerad
+selfdrive/camerad/test/ae_gray_test
 selfdrive/modeld/_modeld
 selfdrive/modeld/_dmonitoringmodeld
 /src/
@@ -56,10 +59,10 @@ one
 openpilot
 notebooks
 xx
+yy
 hyperthneed
 panda_jungle
-apks
-openpilot-apks
+provisioning
 
 .coverage*
 coverage.xml
@@ -70,7 +73,13 @@ pandaextra
 flycheck_*
 
 cppcheck_report.txt
-comma.sh
+comma*.sh
 
 selfdrive/modeld/thneed/compile
 models/*.thneed
+
+*.bz2
+
+build/
+
+!**/.gitkeep

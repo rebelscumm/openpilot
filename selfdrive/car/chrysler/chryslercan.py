@@ -8,7 +8,7 @@ VisualAlert = car.CarControl.HUDControl.VisualAlert
 def create_lkas_hud(packer, gear, lkas_active, hud_alert, hud_count, lkas_car_model):
   # LKAS_HUD 0x2a6 (678) Controls what lane-keeping icon is displayed.
 
-  if hud_alert == VisualAlert.steerRequired:
+  if hud_alert in (VisualAlert.steerRequired, VisualAlert.ldw):
     msg = b'\x00\x00\x00\x03\x00\x00\x00\x00'
     return make_can_msg(0x2a6, msg, 0)
 
@@ -33,7 +33,7 @@ def create_lkas_hud(packer, gear, lkas_active, hud_alert, hud_count, lkas_car_mo
     "CAR_MODEL": lkas_car_model,  # byte 1
     "LKAS_LANE_LINES": lines,  # byte 2, last 4 bits
     "LKAS_ALERTS": alerts,  # byte 3, last 4 bits
-    }
+  }
 
   return packer.make_can_msg("LKAS_HUD", 0, values)  # 0x2a6
 
@@ -43,14 +43,24 @@ def create_lkas_command(packer, apply_steer, moving_fast, frame):
   values = {
     "LKAS_STEERING_TORQUE": apply_steer,
     "LKAS_HIGH_TORQUE": int(moving_fast),
-    "COUNTER": frame,
+    "COUNTER": frame % 0x10,
   }
   return packer.make_can_msg("LKAS_COMMAND", 0, values)
 
-def create_wheel_buttons_command(cc, packer, frame, button, value):
+def create_lkas_heartbit(packer, value, lkasHeartbit):
+  # LKAS_HEARTBIT (697) LKAS heartbeat
+  values = lkasHeartbit.copy()  # forward what we parsed
+  values["LKAS_DISABLED"] = value
+  return packer.make_can_msg("LKAS_HEARTBIT", 0, values)
+
+def create_wheel_buttons_command(packer, counter, buttons):
   # WHEEL_BUTTONS (571) Message sent
   values = {
-    button: value,
-    "COUNTER": frame,
+    "COUNTER": counter % 0x10,
   }
+
+  for b in buttons:
+    if b is not None:
+      values[b] = 1
+
   return packer.make_can_msg("WHEEL_BUTTONS", 0, values)

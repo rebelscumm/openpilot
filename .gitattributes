@@ -1,0 +1,10 @@
+*.sh text eol=lf
+*.bash text eol=lf
+*.py text eol=lf
+*.go text eol=lf
+SConstruct text eol=lf
+SConscript text eol=lf
+selfdrive/ui/spinner text eol=lf
+selfdrive/ui/ui text eol=lf
+selfdrive/sensord/sensord text eol=lf
+selfdrive/ui/soundd/soundd text eol=lf

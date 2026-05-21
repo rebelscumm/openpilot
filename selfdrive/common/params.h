@@ -1,46 +1,46 @@
 #pragma once
-#include <stddef.h>
+
 #include <map>
 #include <string>
-#include <vector>
 
-#define ERR_NO_VALUE -33
+enum ParamKeyType {
+  PERSISTENT = 0x02,
+  CLEAR_ON_MANAGER_START = 0x04,
+  CLEAR_ON_IGNITION_ON = 0x08,
+  CLEAR_ON_IGNITION_OFF = 0x10,
+  DONT_LOG = 0x20,
+  ALL = 0xFFFFFFFF
+};
 
 class Params {
+public:
+  Params(const std::string &path = {});
+  bool checkKey(const std::string &key);
+  ParamKeyType getKeyType(const std::string &key);
+  inline std::string getParamPath(const std::string &key = {}) {
+    return key.empty() ? params_path + "/d" : params_path + "/d/" + key;
+  }
+
+  // Delete a value
+  int remove(const std::string &key);
+  void clearAll(ParamKeyType type);
+
+  // helpers for reading values
+  std::string get(const std::string &key, bool block = false);
+  inline bool getBool(const std::string &key) {
+    return get(key) == "1";
+  }
+  std::map<std::string, std::string> readAll();
+
+  // helpers for writing values
+  int put(const char *key, const char *val, size_t value_size);
+  inline int put(const std::string &key, const std::string &val) {
+    return put(key.c_str(), val.data(), val.size());
+  }
+  inline int putBool(const std::string &key, bool val) {
+    return put(key.c_str(), val ? "1" : "0", 1);
+  }
+
 private:
   std::string params_path;
-
-public:
-  Params(bool persistent_param = false);
-  Params(std::string path);
-
-  int write_db_value(std::string key, std::string dat);
-  int write_db_value(const char* key, const char* value, size_t value_size);
-
-  // Reads a value from the params database.
-  // Inputs:
-  //  key: The key to read.
-  //  value: A pointer where a newly allocated string containing the db value will
-  //         be written.
-  //  value_sz: A pointer where the size of value will be written. Does not
-  //            include the NULL terminator.
-  //  persistent_param: Boolean indicating if the param store in the /persist partition is to be used.
-  //                    e.g. for sensor calibration files. Will not be cleared after wipe or re-install.
-  //
-  // Returns: Negative on failure, otherwise 0.
-  int read_db_value(const char* key, char** value, size_t* value_sz);
-
-  // Delete a value from the params database.
-  // Inputs are the same as read_db_value, without value and value_sz.
-  int delete_db_value(std::string key);
-
-  // Reads a value from the params database, blocking until successful.
-  // Inputs are the same as read_db_value.
-  int read_db_value_blocking(const char* key, char** value, size_t* value_sz);
-
-  int read_db_all(std::map<std::string, std::string> *params);
-  std::vector<char> read_db_bytes(const char* param_name);
-  bool read_db_bool(const char* param_name);
-
-  std::string get(std::string key, bool block=false);
 };

@@ -62,15 +62,8 @@ class opParams:
 
     VT = ValueTypes()
     self.fork_params = {
-                        'camera_offset': Param(0.06, VT.number, 'Your camera offset to use in lane_planner.py', live=True),
-                        'slow_in_turns': Param(True, bool, 'Slow while in turns'),
-                        'slow_in_turns_ratio': Param(1, VT.number, 'Adjust how much slowing occurs. (1.25 = 25% faster in turns than the default)', live=True),
-                        'acc_button_long_press': Param(30, VT.number, 'Number of centiseconds to consider a button as long pressed.  (30 = .30 seconds)', live=True),
-                        'lead_distance_ratio_1bar': Param(2.6, VT.number, 'Lead car adjusted radar distance ratio 1 bar', live=True),
-                        'lead_distance_ratio_2bars': Param(2.1, VT.number, 'Lead car adjusted radar distance ratio 2 bar', live=True),
-                        'lead_distance_ratio_3bars': Param(1.5, VT.number, 'Lead car adjusted radar distance ratio 3 bar', live=True),
-                        'lead_distance_ratio_4bars': Param(1.1, VT.number, 'Lead car adjusted radar distance ratio 4 bar', live=True),
-                        }
+      'steer.checkMinimum': Param(True, bool, 'Perform minimum steer speed checks.'),
+    }
 
     self._params_file = '/data/op_params.json'
     self._backup_file = '/data/op_params_corrupt.json'

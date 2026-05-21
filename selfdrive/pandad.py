@@ -1,96 +1,40 @@
 #!/usr/bin/env python3
 # simple boardd wrapper that updates the panda first
 import os
+import usb1
 import time
+import subprocess
+from typing import NoReturn
+from functools import cmp_to_key
 
-from panda import BASEDIR as PANDA_BASEDIR, Panda, PandaDFU, build_st
+from panda import DEFAULT_FW_FN, DEFAULT_H7_FW_FN, MCU_TYPE_H7, Panda, PandaDFU
 from common.basedir import BASEDIR
-from common.gpio import gpio_init, gpio_set
-from selfdrive.hardware import TICI
-from selfdrive.hardware.tici.pins import GPIO_HUB_RST_N, GPIO_STM_BOOT0, GPIO_STM_RST_N
+from common.params import Params
 from selfdrive.swaglog import cloudlog
 
-def set_panda_power(power=True):
-  if not TICI:
-    return
 
-  gpio_init(GPIO_STM_RST_N, True)
-  gpio_init(GPIO_STM_BOOT0, True)
-
-  gpio_set(GPIO_STM_RST_N, True)
-  gpio_set(GPIO_HUB_RST_N, True)
-
-  time.sleep(0.1)
-
-  gpio_set(GPIO_STM_RST_N, not power)
-
-
-def get_firmware_fn():
-  signed_fn = os.path.join(PANDA_BASEDIR, "board", "obj", "panda.bin.signed")
-  if os.path.exists(signed_fn):
-    cloudlog.info("Using prebuilt signed firmware")
-    return signed_fn
-  else:
-    cloudlog.info("Building panda firmware")
-    fn = "obj/panda.bin"
-    build_st(fn, clean=False)
-    return os.path.join(PANDA_BASEDIR, "board", fn)
-
-
-def get_expected_signature(fw_fn=None):
-  if fw_fn is None:
-    fw_fn = get_firmware_fn()
+def get_expected_signature(panda: Panda) -> bytes:
+  fn = DEFAULT_H7_FW_FN if (panda.get_mcu_type() == MCU_TYPE_H7) else DEFAULT_FW_FN
 
   try:
-    return Panda.get_signature_from_firmware(fw_fn)
+    return Panda.get_signature_from_firmware(fn)
   except Exception:
     cloudlog.exception("Error computing expected signature")
     return b""
 
 
-def update_panda():
-  panda = None
-  panda_dfu = None
+def flash_panda(panda_serial: str) -> Panda:
+  panda = Panda(panda_serial)
 
-  cloudlog.info("Connecting to panda")
-
-  while True:
-    # break on normal mode Panda
-    panda_list = Panda.list()
-    if len(panda_list) > 0:
-      cloudlog.info("Panda found, connecting")
-      panda = Panda(panda_list[0])
-      break
-
-    # flash on DFU mode Panda
-    panda_dfu = PandaDFU.list()
-    if len(panda_dfu) > 0:
-      cloudlog.info("Panda in DFU mode found, flashing recovery")
-      panda_dfu = PandaDFU(panda_dfu[0])
-      panda_dfu.recover()
-
-    time.sleep(1)
-
-  fw_fn = get_firmware_fn()
-  fw_signature = get_expected_signature(fw_fn)
-
-  try:
-    serial = panda.get_serial()[0].decode("utf-8")
-  except Exception:
-    serial = None
+  fw_signature = get_expected_signature(panda)
 
   panda_version = "bootstub" if panda.bootstub else panda.get_version()
   panda_signature = b"" if panda.bootstub else panda.get_signature()
-  cloudlog.warning("Panda %s connected, version: %s, signature %s, expected %s" % (
-    serial,
-    panda_version,
-    panda_signature.hex(),
-    fw_signature.hex(),
-  ))
+  cloudlog.warning(f"Panda {panda_serial} connected, version: {panda_version}, signature {panda_signature.hex()[:16]}, expected {fw_signature.hex()[:16]}")
 
   if panda.bootstub or panda_signature != fw_signature:
     cloudlog.info("Panda firmware out of date, update required")
-    panda.flash(fw_fn)
+    panda.flash()
     cloudlog.info("Done flashing")
 
   if panda.bootstub:
@@ -108,16 +52,83 @@ def update_panda():
     cloudlog.info("Version mismatch after flashing, exiting")
     raise AssertionError
 
-  cloudlog.info("Resetting panda")
-  panda.reset()
+  return panda
 
-def main():
-  set_panda_power()
-  update_panda()
 
-  os.chdir(os.path.join(BASEDIR, "selfdrive/boardd"))
-  os.execvp("./boardd", ["./boardd"])
+def panda_sort_cmp(a: Panda, b: Panda):
+  a_type = a.get_type()
+  b_type = b.get_type()
 
+  # make sure the internal one is always first
+  if a.is_internal() and not b.is_internal():
+    return -1
+  if not a.is_internal() and b.is_internal():
+    return 1
+
+  # sort by hardware type
+  if a_type != b_type:
+    return a_type < b_type
+
+  # last resort: sort by serial number
+  return a.get_usb_serial() < b.get_usb_serial()
+
+
+def main() -> NoReturn:
+  first_run = True
+  params = Params()
+
+  while True:
+    try:
+      params.delete("PandaSignatures")
+
+      # Flash all Pandas in DFU mode
+      for p in PandaDFU.list():
+        cloudlog.info(f"Panda in DFU mode found, flashing recovery {p}")
+        PandaDFU(p).recover()
+      time.sleep(1)
+
+      panda_serials = Panda.list()
+      if len(panda_serials) == 0:
+        continue
+
+      cloudlog.info(f"{len(panda_serials)} panda(s) found, connecting - {panda_serials}")
+
+      # Flash pandas
+      pandas = []
+      for serial in panda_serials:
+        pandas.append(flash_panda(serial))
+
+      # check health for lost heartbeat
+      for panda in pandas:
+        health = panda.health()
+        if health["heartbeat_lost"]:
+          params.put_bool("PandaHeartbeatLost", True)
+          cloudlog.event("heartbeat lost", deviceState=health, serial=panda.get_usb_serial())
+
+        if first_run:
+          cloudlog.info(f"Resetting panda {panda.get_usb_serial()}")
+          panda.reset()
+
+      # sort pandas to have deterministic order
+      pandas.sort(key=cmp_to_key(panda_sort_cmp))
+      panda_serials = list(map(lambda p: p.get_usb_serial(), pandas))
+
+      # log panda fw versions
+      params.put("PandaSignatures", b','.join(p.get_signature() for p in pandas))
+
+      # close all pandas
+      for p in pandas:
+        p.close()
+    except (usb1.USBErrorNoDevice, usb1.USBErrorPipe):
+      # a panda was disconnected while setting everything up. let's try again
+      cloudlog.exception("Panda USB exception while setting up")
+      continue
+
+    first_run = False
+
+    # run boardd with all connected serials as arguments
+    os.chdir(os.path.join(BASEDIR, "selfdrive/boardd"))
+    subprocess.run(["./boardd", *panda_serials], check=True)
 
 if __name__ == "__main__":
   main()
