@@ -26,6 +26,7 @@ class CarController():
     self.prev_frame = -1
     self.lkas_frame = -1
     self.prev_lkas_counter = -1
+    self.lkas_command_counter = None
     self.hud_count = 0
     self.car_fingerprint = CP.carFingerprint
     self.torq_enabled = False
@@ -64,10 +65,8 @@ class CarController():
     self.prev_frame = CS.frame
 
     self.lkas_frame += 1
-    lkas_counter = CS.lkas_counter
-    if self.prev_lkas_counter == lkas_counter:
-      lkas_counter = (self.prev_lkas_counter + 1) % 16  # Predict the next frame
-    self.prev_lkas_counter = lkas_counter
+    if self.lkas_command_counter is None:
+      self.lkas_command_counter = CS.lkas_counter
 
     # steer torque
     new_steer = int(round(actuators.steer * CarControllerParams.STEER_MAX))
@@ -104,8 +103,11 @@ class CarController():
         can_sends.append(new_msg)
         self.hud_count += 1
 
-    new_msg = create_lkas_command(self.packer, int(apply_steer), self.torq_enabled, lkas_counter)
-    can_sends.append(new_msg)
+    if self.lkas_frame % 2 == 0:  # 50Hz; PSCM can fault if 100Hz command frames are dropped.
+      new_msg = create_lkas_command(self.packer, int(apply_steer), self.torq_enabled, self.lkas_command_counter)
+      can_sends.append(new_msg)
+      self.prev_lkas_counter = self.lkas_command_counter
+      self.lkas_command_counter = (self.lkas_command_counter + 1) % 16
 
     new_actuators = actuators.copy()
     new_actuators.steer = apply_steer / CarControllerParams.STEER_MAX
