@@ -27,9 +27,11 @@ class CarController():
     self.lkas_frame = -1
     self.prev_lkas_counter = -1
     self.lkas_command_counter = None
+    self.last_lkas_falling_edge = 0
     self.hud_count = 0
     self.car_fingerprint = CP.carFingerprint
     self.torq_enabled = False
+    self.torq_enabled_prev = False
     self.steer_rate_limited = False
     self.last_button_counter = -1
     self.button_frame = -1
@@ -84,6 +86,12 @@ class CarController():
         self.torq_enabled = True
       elif not low_steer_models and CS.out.vEgo < (CS.CP.minSteerSpeed - 3.0):
         self.torq_enabled = False  # < 14.5m/s stock turns off this bit, but fine down to 13.5
+
+    # EPS can fault if LKAS re-enables too quickly after the control bit drops.
+    self.torq_enabled = self.torq_enabled and (self.lkas_frame - self.last_lkas_falling_edge > 200)
+    if not self.torq_enabled and self.torq_enabled_prev:
+      self.last_lkas_falling_edge = self.lkas_frame
+    self.torq_enabled_prev = self.torq_enabled
 
     lkas_active = self.moving_fast and enabled
     if not lkas_active:
