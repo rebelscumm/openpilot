@@ -95,7 +95,7 @@ if arch == "aarch64" or arch == "larch64":
 
   if arch == "larch64":
     libpath += [
-      "#third_party/snpe/larch64",
+      "#third_party/snpe/aarch64-linux-gcc4.9",
       "#third_party/libyuv/larch64/lib",
       "/usr/lib/aarch64-linux-gnu"
     ]
@@ -108,7 +108,7 @@ if arch == "aarch64" or arch == "larch64":
   else:
     rpath = []
     libpath += [
-      "#third_party/snpe/aarch64",
+      "#third_party/snpe/aarch64-android-clang6.0",
       "#third_party/libyuv/lib",
       "/system/vendor/lib64"
     ]

@@ -60,6 +60,7 @@ class Panda {
   std::atomic<bool> comms_healthy = true;
   cereal::PandaState::PandaType hw_type = cereal::PandaState::PandaType::UNKNOWN;
   bool has_rtc = false;
+  bool legacy_can = false;
   const uint32_t bus_offset;
 
   // Static functions
@@ -97,5 +98,8 @@ protected:
   Panda(uint32_t bus_offset) : bus_offset(bus_offset) {}
   void pack_can_buffer(const capnp::List<cereal::CanData>::Reader &can_data_list,
                          std::function<void(uint8_t *, size_t)> write_func);
+  void pack_legacy_can_buffer(const capnp::List<cereal::CanData>::Reader &can_data_list,
+                              std::function<void(uint8_t *, size_t)> write_func);
+  bool unpack_legacy_can_buffer(uint8_t *data, int size, std::vector<can_frame> &out_vec);
   bool unpack_can_buffer(uint8_t *data, int size, std::vector<can_frame> &out_vec);
 };

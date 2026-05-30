@@ -94,7 +94,7 @@ def fingerprint(logcan, sendcan):
       if cached_params.carName == "mock":
         cached_params = None
 
-    if cached_params is not None and len(cached_params.carFw) > 0 and cached_params.carVin is not VIN_UNKNOWN:
+    if cached_params is not None and len(cached_params.carFw) > 0 and cached_params.carVin != VIN_UNKNOWN:
       cloudlog.warning("Using cached CarParams")
       vin = cached_params.carVin
       car_fw = list(cached_params.carFw)
@@ -108,8 +108,18 @@ def fingerprint(logcan, sendcan):
     vin = VIN_UNKNOWN
     exact_fw_match, fw_candidates, car_fw = True, set(), []
 
+  params = Params()
+  if vin == VIN_UNKNOWN:
+    cached_vin = params.get("CarVin")
+    if cached_vin is not None:
+      cached_vin = cached_vin.decode("utf-8", "ignore")
+      if len(cached_vin) == 17 and cached_vin != VIN_UNKNOWN:
+        cloudlog.warning("VIN query returned unknown; preserving cached VIN %s", cached_vin)
+        vin = cached_vin
+  else:
+    params.put("CarVin", vin)
+
   cloudlog.warning("VIN %s", vin)
-  Params().put("CarVin", vin)
 
   finger = gen_empty_fingerprint()
   candidate_cars = {i: all_legacy_fingerprint_cars() for i in [0, 1]}  # attempt fingerprint on both bus 0 and 1

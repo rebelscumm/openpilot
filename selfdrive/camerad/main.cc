@@ -12,7 +12,7 @@ int main(int argc, char *argv[]) {
     ret = util::set_realtime_priority(53);
     assert(ret == 0);
     ret = util::set_core_affinity({Hardware::EON() ? 2 : 6});
-    assert(ret == 0 || Params().getBool("IsOffroad")); // failure ok while offroad due to offlining cores
+    (void)ret;  // C2 can reject affinity while onroad; continue instead of crashing camerad.
   }
 
   camerad_thread();

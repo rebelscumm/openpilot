@@ -115,27 +115,19 @@ bool safety_setter_thread(std::vector<Panda *> pandas) {
     return false;
   }
 
-  pandas[0]->set_safety_model(cereal::CarParams::SafetyModel::ELM327);
-
   Params p = Params();
 
-  // switch to SILENT when CarVin param is read
-  while (true) {
-    if (do_exit || !check_all_connected(pandas) || !ignition) {
-      return false;
-    }
-
-    std::string value_vin = p.get("CarVin");
-    if (value_vin.size() > 0) {
-      // sanity check VIN format
-      assert(value_vin.size() == 17);
-      LOGW("got CarVin %s", value_vin.c_str());
-      break;
-    }
-    util::sleep_for(20);
+  // Keep Chrysler forwarding alive while controlsd fingerprints and builds CarParams.
+  // This white-panda Chrysler harness acts as the camera gateway; ELM327/SILENT
+  // during startup can interrupt forwarding before the final safety mode is set.
+  for (const auto& panda : pandas) {
+    panda->set_safety_model(cereal::CarParams::SafetyModel::CHRYSLER);
   }
 
-  pandas[0]->set_safety_model(cereal::CarParams::SafetyModel::ELM327, 1);
+  std::string value_vin = p.get("CarVin");
+  if (value_vin.size() == 17) {
+    LOGW("got cached CarVin %s", value_vin.c_str());
+  }
 
   std::string params;
   LOGW("waiting for params to set safety model");
@@ -358,7 +350,7 @@ std::optional<bool> send_panda_states(PubMaster *pm, const std::vector<Panda *> 
     ps.setGmlanSendErrs(health.gmlan_send_errs_pkt);
     ps.setPandaType(panda->hw_type);
     ps.setSafetyModel(cereal::CarParams::SafetyModel(health.safety_mode_pkt));
-    ps.setSafetyParam(health.safety_param_pkt);
+    ps.setSafetyParam(panda->legacy_can ? 0 : health.safety_param_pkt);
     ps.setFaultStatus(cereal::PandaState::FaultStatus(health.fault_status_pkt));
     ps.setPowerSaveEnabled((bool)(health.power_save_enabled_pkt));
     ps.setHeartbeatLost((bool)(health.heartbeat_lost_pkt));

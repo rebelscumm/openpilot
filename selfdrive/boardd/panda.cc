@@ -35,6 +35,8 @@ Panda::Panda(std::string serial, uint32_t bus_offset) : bus_offset(bus_offset) {
   // init libusb
   ssize_t num_devices;
   libusb_device **dev_list = NULL;
+  unsigned char packet_versions[2] = {0};
+  int packet_version_read = 0;
   int err = init_usb_ctx(&ctx);
   if (err != 0) { goto fail; }
 
@@ -76,8 +78,16 @@ Panda::Panda(std::string serial, uint32_t bus_offset) : bus_offset(bus_offset) {
 
   hw_type = get_hw_type();
 
-  assert((hw_type != cereal::PandaState::PandaType::WHITE_PANDA) &&
-         (hw_type != cereal::PandaState::PandaType::GREY_PANDA));
+  packet_version_read = usb_read(0xdd, 0, 0, packet_versions, sizeof(packet_versions));
+  legacy_can = (packet_version_read >= 0) && (packet_versions[0] == 0) && (packet_versions[1] == 0);
+  if (legacy_can) {
+    LOGW("panda uses legacy CAN USB packets");
+  }
+
+  if ((hw_type == cereal::PandaState::PandaType::WHITE_PANDA) ||
+      (hw_type == cereal::PandaState::PandaType::GREY_PANDA)) {
+    LOGW("allowing legacy panda hardware type: %d", (int)hw_type);
+  }
 
   has_rtc = (hw_type == cereal::PandaState::PandaType::UNO) ||
             (hw_type == cereal::PandaState::PandaType::DOS);
@@ -248,6 +258,7 @@ int Panda::usb_bulk_read(unsigned char endpoint, unsigned char* data, int length
 }
 
 void Panda::set_safety_model(cereal::CarParams::SafetyModel safety_model, int safety_param) {
+  // Use the requested safety mode on legacy panda; allOutput WP forwarding saturates this Pacifica bus.
   usb_write(0xdc, (uint16_t)safety_model, safety_param);
 }
 
@@ -410,10 +421,49 @@ void Panda::pack_can_buffer(const capnp::List<cereal::CanData>::Reader &can_data
   if (pos > 0) write_func(send_buf, pos);
 }
 
+void Panda::pack_legacy_can_buffer(const capnp::List<cereal::CanData>::Reader &can_data_list,
+                                     std::function<void(uint8_t *, size_t)> write_func) {
+  uint8_t send_buf[USB_TX_SOFT_LIMIT] = {0};
+  int pos = 0;
+
+  for (auto cmsg : can_data_list) {
+    uint8_t bus = cmsg.getSrc();
+    if (bus < bus_offset || bus >= (bus_offset + PANDA_BUS_CNT)) {
+      continue;
+    }
+
+    auto can_data = cmsg.getDat();
+    assert(can_data.size() <= 8);
+
+    uint32_t rir = (cmsg.getAddress() >= 0x800) ? ((uint32_t)cmsg.getAddress() << 3U) | 5U
+                                                : ((uint32_t)cmsg.getAddress() << 21U) | 1U;
+    uint32_t rdtr = (uint32_t)can_data.size() | ((uint32_t)(bus - bus_offset) << 4U);
+
+    if (pos + 0x10 > (int)sizeof(send_buf)) {
+      write_func(send_buf, pos);
+      memset(send_buf, 0, sizeof(send_buf));
+      pos = 0;
+    }
+
+    memcpy(&send_buf[pos], &rir, sizeof(rir));
+    memcpy(&send_buf[pos + 4], &rdtr, sizeof(rdtr));
+    memcpy(&send_buf[pos + 8], can_data.begin(), can_data.size());
+    pos += 0x10;
+  }
+
+  if (pos > 0) write_func(send_buf, pos);
+}
+
 void Panda::can_send(capnp::List<cereal::CanData>::Reader can_data_list) {
-  pack_can_buffer(can_data_list, [=](uint8_t* data, size_t size) {
-    usb_bulk_write(3, data, size, 5);
-  });
+  auto write_func = [=](uint8_t* data, size_t size) {
+    usb_bulk_write(3, data, size, legacy_can ? 25 : 5);
+  };
+
+  if (legacy_can) {
+    pack_legacy_can_buffer(can_data_list, write_func);
+  } else {
+    pack_can_buffer(can_data_list, write_func);
+  }
 }
 
 bool Panda::can_receive(std::vector<can_frame>& out_vec) {
@@ -426,7 +476,31 @@ bool Panda::can_receive(std::vector<can_frame>& out_vec) {
     LOGW("Panda receive buffer full");
   }
 
-  return (recv <= 0) ? true : unpack_can_buffer(data, recv, out_vec);
+  if (recv <= 0) return true;
+  return legacy_can ? unpack_legacy_can_buffer(data, recv, out_vec) : unpack_can_buffer(data, recv, out_vec);
+}
+
+bool Panda::unpack_legacy_can_buffer(uint8_t *data, int size, std::vector<can_frame> &out_vec) {
+  for (int pos = 0; pos + 0x10 <= size; pos += 0x10) {
+    uint32_t rir = 0;
+    uint32_t rdtr = 0;
+    memcpy(&rir, &data[pos], sizeof(rir));
+    memcpy(&rdtr, &data[pos + 4], sizeof(rdtr));
+
+    uint8_t data_len = rdtr & 0xFU;
+    if (data_len > 8) {
+      LOGE("CAN: invalid legacy DLC");
+      comms_healthy = false;
+      return false;
+    }
+
+    can_frame &canData = out_vec.emplace_back();
+    canData.busTime = rdtr >> 16U;
+    canData.address = (rir & 4U) ? (rir >> 3U) : (rir >> 21U);
+    canData.src = ((rdtr >> 4U) & 0xFFU) + bus_offset;
+    canData.dat.assign((char *)&data[pos + 8], data_len);
+  }
+  return true;
 }
 
 bool Panda::unpack_can_buffer(uint8_t *data, int size, std::vector<can_frame> &out_vec) {

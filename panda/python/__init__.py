@@ -162,6 +162,7 @@ class Panda(object):
   CAN_PACKET_VERSION = 2
   HEALTH_PACKET_VERSION = 3
   HEALTH_STRUCT = struct.Struct("<IIIIIIIIBBBBBBBHBBBHI")
+  LEGACY_HEALTH_STRUCT = struct.Struct("<IIIIIIIIBBBBBBBBB")
 
   F2_DEVICES = [HW_TYPE_PEDAL]
   F4_DEVICES = [HW_TYPE_WHITE_PANDA, HW_TYPE_GREY_PANDA, HW_TYPE_BLACK_PANDA, HW_TYPE_UNO, HW_TYPE_DOS]
@@ -351,8 +352,39 @@ class Panda(object):
 
   # ******************* health *******************
 
-  @ensure_health_packet_version
   def health(self):
+    if self.health_version == 0:
+      dat = self._handle.controlRead(Panda.REQUEST_IN, 0xd2, 0, 0, self.LEGACY_HEALTH_STRUCT.size)
+      a = self.LEGACY_HEALTH_STRUCT.unpack(dat)
+      return {
+        "uptime": a[0],
+        "voltage": a[1],
+        "current": a[2],
+        "can_rx_errs": a[3],
+        "can_send_errs": a[4],
+        "can_fwd_errs": a[5],
+        "gmlan_send_errs": a[6],
+        "faults": a[7],
+        "ignition_line": a[8],
+        "ignition_can": a[9],
+        "controls_allowed": a[10],
+        "gas_interceptor_detected": a[11],
+        "car_harness_status": a[12],
+        "usb_power_mode": a[13],
+        "safety_mode": a[14],
+        "safety_param": 0,
+        "fault_status": a[15],
+        "power_save_enabled": a[16],
+        "heartbeat_lost": False,
+        "unsafe_mode": 0,
+        "blocked_msg_cnt": 0,
+      }
+
+    if self.health_version < self.HEALTH_PACKET_VERSION:
+      raise RuntimeError("Panda firmware has outdated health packet definition. Reflash panda firmware.")
+    elif self.health_version > self.HEALTH_PACKET_VERSION:
+      raise RuntimeError("Panda python library has outdated health packet definition. Update panda python library.")
+
     dat = self._handle.controlRead(Panda.REQUEST_IN, 0xd2, 0, 0, self.HEALTH_STRUCT.size)
     a = self.HEALTH_STRUCT.unpack(dat)
     return {
